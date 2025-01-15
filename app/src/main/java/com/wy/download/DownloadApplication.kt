@@ -15,4 +15,14 @@ class DownloadApplication: Application() {
         Timber.plant(FileLoggingTree(this))
         DbManager.initDatabase(this)
     }
+
+    companion object {
+        private var instance: DownloadApplication? = null
+        fun getInstance(): DownloadApplication {
+            if (instance == null) {
+                instance = DownloadApplication()
+            }
+            return instance!!
+        }
+    }
 }

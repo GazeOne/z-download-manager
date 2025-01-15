@@ -10,5 +10,6 @@ class DownloadTaskInfo {
     var hash: String = ""
     var savePath: String = ""
     var fileName: String = ""
+    var torrentFile: List<TorrentFile>? = null
     var extras = mutableMapOf<String, String>()
 }

@@ -8,6 +8,7 @@ import com.dampcake.bencode.Type
 import com.wy.download.model.DownloadTaskInfo
 import com.wy.download.model.TaskState
 import com.wy.download.model.TaskTag
+import com.wy.download.model.TorrentFile
 import com.wy.download.model.UrlCheckResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -79,7 +80,6 @@ object URLUtil {
                                 urlString.substring(urlString.lastIndexOf('/') + 1)
                             }
 
-
                         // 检查响应头中是否包含哈希值
                         val hash = response.header("Content-MD5") ?: ""
 
@@ -92,7 +92,7 @@ object URLUtil {
                             completedSize = 0L
                             this.hash = hash
                             this.fileName = fileName
-                            savePath = MediaStoreUtils.getDownloadFilePath(fileName)
+                            savePath = FileUtil.getDownloadFilePath(tag, fileName)
                         }
 
                         return@withContext UrlCheckResult(
@@ -150,7 +150,6 @@ object URLUtil {
                     return UrlCheckResult(false, "请求URL地址失败")
                 }
             }
-
         } catch (e: Exception) {
             Timber.i("error，message = ${e.message}")
             return UrlCheckResult(false, e.message ?: "URL请求异常")
@@ -175,7 +174,7 @@ object URLUtil {
                 readBytesFromInputStream(inputStream)
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            Timber.e("读取文件内容失败: ${e.message}")
             null
         }
     }
@@ -194,7 +193,7 @@ object URLUtil {
         return buffer.toByteArray()
     }
 
-    private suspend fun isValidTorrent(bytes: ByteArray, urlString: String): UrlCheckResult {
+    private fun isValidTorrent(bytes: ByteArray, urlString: String): UrlCheckResult {
         return try {
             val bencodeUTF8 = Bencode(StandardCharsets.UTF_8)
             val dict: Map<String, Any> = bencodeUTF8.decode(bytes, Type.DICTIONARY)
@@ -215,18 +214,45 @@ object URLUtil {
             if (!info.containsKey("pieces") || info["pieces"] !is String) {
                 UrlCheckResult(false, "字段 pieces 类型不合法")
             }
-//            val taskInfo = DownloadTaskInfo().apply {
-//                taskId = StringUtil.generateTaskId()
-//                this.url = urlString
-//                tag = TaskTag.TORRENT.name
-//                state = TaskState.WAITING
-//                totalSize = dict[""]
-//                completedSize = 0L
-//                this.hash = hash
-//                this.fileName = info["name"].toString()
-            //                savePath = MediaStoreUtils.getDownloadFilePath(fileName)
+            var totalSize = 0L
+            val tag: TaskTag
+            var torrentFiles: List<TorrentFile>? = null
 
-//            }
+            if (info.containsKey("files")) {
+                // 多文件模式
+                val files = info["files"] as? List<*>
+                    ?: return UrlCheckResult(false, "字段 files 类型不合法")
+                tag = TaskTag.MULTI_FILE_TORRENT
+                torrentFiles = ArrayList()
+                for (file in files) {
+                    val fileMap =
+                        file as? Map<*, *> ?: return UrlCheckResult(false, "文件格式不合法")
+                    val length = (fileMap["length"] as? Number)?.toLong()
+                        ?: return UrlCheckResult(false, "文件长度缺失或类型不合法")
+                    val path = fileMap["path"].toString()
+                    val torrentFile = TorrentFile(length, path)
+                    torrentFiles.add(torrentFile)
+                    totalSize += length
+                }
+            } else {
+                // 单文件模式
+                tag = TaskTag.SINGLE_FILE_TORRENT
+                totalSize = (info["length"] as? Number)?.toLong()
+                    ?: return UrlCheckResult(false, "字段 length 类型不合法或缺失")
+            }
+
+            val taskInfo = DownloadTaskInfo().apply {
+                taskId = StringUtil.generateTaskId()
+                this.url = urlString
+                this.tag = tag.name
+                state = TaskState.WAITING
+                this.totalSize = totalSize
+                this.torrentFile = torrentFiles
+                completedSize = 0L
+                this.hash = ""
+                this.fileName = info["name"].toString()
+                savePath = FileUtil.getDownloadFilePath(tag.name, fileName)
+            }
             // 所有检查通过
             UrlCheckResult(true, "种子合法", taskInfo)
         } catch (e: NullPointerException) {
@@ -236,7 +262,7 @@ object URLUtil {
         } catch (e: BencodeException) {
             UrlCheckResult(false, "${e.message}")
         } catch (e: Exception) {
-            println("发生错误: ${e.message}")
+            Timber.e("发生错误: ${e.message}")
             UrlCheckResult(false, "${e.message}")
         }
     }
@@ -244,9 +270,9 @@ object URLUtil {
     fun isMagnetLink(url: String): UrlCheckResult {
         val magnetRegex = Regex(
             "^magnet:\\?xt=urn:btih:[A-Fa-f0-9]{40}" + // xt 参数
-                    "(&dn=[^&]+)?" +                   // 允许可选的 dn 参数
-                    "(&tr=https?://[^&]+)?" +          // 允许可选的 tr 参数
-                    ".*$",
+                "(&dn=[^&]+)?" +                   // 允许可选的 dn 参数
+                "(&tr=https?://[^&]+)?" +          // 允许可选的 tr 参数
+                ".*$",
             RegexOption.IGNORE_CASE
         )
         val isMatch = magnetRegex.matches(url)
@@ -259,9 +285,9 @@ object URLUtil {
                 state = TaskState.WAITING
                 totalSize = parseResult["xl"]?.get(0)?.toLong() ?: 0L
                 completedSize = 0L
-                this.hash = ""
+                this.hash = parseResult["xt"]?.firstOrNull()?.substringAfter("btih:") ?: ""
                 this.fileName = parseResult["dn"]?.get(0) ?: ""
-                savePath = MediaStoreUtils.getDownloadFilePath(fileName)
+                savePath = FileUtil.getDownloadFilePath(tag, fileName)
             }
             return UrlCheckResult(true, "合法的磁力链接", taskInfo)
         } else {
@@ -318,8 +344,8 @@ fun String.toContentCategory(): ContentCategory {
         ) -> ContentCategory.DOCUMENT
 
         this.startsWith("application/zip") ||
-                this.startsWith("application/x-rar-compressed") ||
-                this.startsWith("application/x-7z-compressed") -> ContentCategory.ARCHIVE
+            this.startsWith("application/x-rar-compressed") ||
+            this.startsWith("application/x-7z-compressed") -> ContentCategory.ARCHIVE
 
         this.startsWith("text/html") -> ContentCategory.WEBPAGE
         this.contains("application/x-bittorrent") -> ContentCategory.TORRENT

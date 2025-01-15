@@ -5,5 +5,4 @@ import com.wy.download.model.TaskType
 
 object TaskManager {
 
-
 }

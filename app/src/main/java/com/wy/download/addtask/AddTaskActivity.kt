@@ -100,12 +100,12 @@ fun AddTaskScreen() {
                         }
                     } else if (url.endsWith(".torrent")) {
                         val isValidTorrent = URLUtil.isUrlTorrent(url)
-                        if (isValidTorrent.first) {
+                        if (isValidTorrent.isValid) {
                             //TODO 合法的种子文件，创建任务
                             activity?.finish()
                         } else {
                             isTipsVisible = true
-                            tipsText = isValidTorrent.second
+                            tipsText = isValidTorrent.message
                         }
                     } else {
                         val checkResult = URLUtil.isValidDownloadLink(url)
