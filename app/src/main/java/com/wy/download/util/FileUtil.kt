@@ -30,11 +30,12 @@ object FileUtil {
         } else {
             encodeFileName(fileName)
         }
-        return ROOT_PATH + File.separator + tag + File.separator + fileName
+        return ROOT_PATH + File.separator + tag + File.separator + name
     }
 
 
     // Android9 以下使用绝对路径创建文件
+    @Throws(Exception::class)
     fun getOrCreateFile(path: String): File {
         if (TextUtils.isEmpty(path)) {
             throw EmptyPathException()
@@ -43,17 +44,22 @@ object FileUtil {
         val file = File(path)
         val parentFile = file.parentFile ?: throw ParentFileNullException()
 
-        if (!parentFile.exists() && !parentFile.mkdirs()) {
-            throw ParentFileCreateException()
+        if (!parentFile.exists()) {
+            val mkdirResult = parentFile.mkdirs()
+            if (!mkdirResult && !parentFile.exists()) {
+                throw ParentFileCreateException()
+            }
         }
 
-        try {
-            val isSuccess = file.createNewFile()
-            if (!isSuccess) {
-                throw FileCreateException()
+        if (!file.exists()) {
+            try {
+                val createNewFileResult = file.createNewFile()
+                if (!createNewFileResult && !file.exists()) {
+                    throw FileCreateException()
+                }
+            } catch (e: IOException) {
+                throw FileCreateException(message = e.message ?: "")
             }
-        } catch (e: IOException) {
-            throw FileCreateException(e.message ?: "")
         }
         return file
     }
