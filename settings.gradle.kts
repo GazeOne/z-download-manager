@@ -12,7 +12,7 @@ pluginManagement {
     }
 }
 dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
     repositories {
         google()
         mavenCentral()
@@ -22,3 +22,7 @@ dependencyResolutionManagement {
 rootProject.name = "z-download-manager"
 include(":app")
 include(":nativelib")
+include(":flutter_module")
+project(":flutter_module").projectDir = file("../flutter_module")
+apply(from = "./flutter_module/.android/include_flutter.groovy")
+

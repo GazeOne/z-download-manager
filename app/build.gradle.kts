@@ -69,6 +69,7 @@ dependencies {
     implementation(libs.androidx.navigation.compose)
     ksp(libs.room.compiler)
     implementation(project(":nativelib"))
+    implementation(project(":flutter"))
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

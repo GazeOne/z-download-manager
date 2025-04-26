@@ -14,7 +14,8 @@ android {
         consumerProguardFiles("consumer-rules.pro")
         externalNativeBuild {
             cmake {
-                cppFlags("")
+                cppFlags("-std=c++14 -frtti -fexceptions")
+                abiFilters("arm64-v8a", "x86_64")
             }
         }
     }
